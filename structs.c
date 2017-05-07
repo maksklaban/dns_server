@@ -35,8 +35,8 @@ struct res_record {
     unsigned char *rdata;
 };
  
-typedef struct {
-    unsigned char *name;
-    struct QUESTION *ques;
-} query;
- 
+// typedef struct {
+//     unsigned char *name;
+//     struct QUESTION *ques;
+// } query;
+//  
