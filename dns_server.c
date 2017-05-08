@@ -22,12 +22,12 @@
 
 
 int count_lines(unsigned char* name);
-int check_hostname(unsigned char* hostname, unsigned char* blacklist[], int len);
+int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len);
 void load_settings();
-void load_blacklist();
+void load_blacklist(char blacklist[][MAXDATASIZE], int len);
 void error(const char *msg);
 void add_dns_name(unsigned char* dns,unsigned char* host);
-void tcp_handler(int sock, unsigned char* blacklist[], int len);
+void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len);
 void send_dns_request(unsigned char* dns_request, unsigned long len);
 void start_tcp_server();
 void get_dns(unsigned char* hostname, unsigned char* dns_request);
@@ -53,9 +53,13 @@ int count_lines(unsigned char* name) {
     return line_count;
 }
 
-int check_hostname(unsigned char* hostname, unsigned char* blacklist[], int len) {
+int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len) {
+        strtok(hostname, "\n");
+    for ( int i = 0; i < strlen(hostname); i++ ) {
+        printf("%d elem: %d\n", i, hostname[i]);
+    }
     for ( int i = 0; i < len; i++ ) {
-        // printf("%s %s\n",blacklist[i], hostname);
+
         if ( strcmp(blacklist[i], hostname) == 0 ) {
             return 1;
         }
@@ -98,16 +102,19 @@ void load_settings() {
     fclose(settings_file);
 }
 
-void load_blacklist(unsigned char* blacklist[]) {
+void load_blacklist(char blacklist[][MAXDATASIZE], int list_len) {
     FILE* blacklst_file;
-    size_t len = 0;
     char* buffer;
+    size_t len = 0;
 
     blacklst_file = fopen(BLACKLIST_FILENAME, "r");
     
-    for (int i = 0; (getline(&buffer, &len, blacklst_file)) != -1; i++) {
-        blacklist[i] = buffer;
-        // printf("%s", blacklist[i]);
+    for (int i = 0; getline(&buffer, &len, blacklst_file) != -1; i++) {
+        // printf("%d elem: %s\n", it, blacklist[it]);
+        // fgets(buffer, sizeof(buffer), blacklst_file);
+        strtok(buffer, "\n");
+        strcpy(blacklist[i], buffer);
+        // printf("load = %s\n", blacklist[i]);
     }
 
     free(buffer);
@@ -137,23 +144,21 @@ void add_dns_name(unsigned char* dns,unsigned char* host) {
 }
 
 
-void tcp_handler(int sock, unsigned char* blacklist[], int len) {
+void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len) {
     int numbytes;
-    unsigned char hostname[MAXNAMESIZE];
+    char hostname[MAXNAMESIZE];
     unsigned char dns_request[MAX_DNS_REQUST_SIZE];
     int status;
 
     bzero(hostname,MAXDATASIZE);
-    for ( int i = 0; i < len; i++ ) {
-        printf("%s\n", blacklist[i]);
-    }
+
     while (1) {
         if ((numbytes = recv(sock, hostname, MAXDATASIZE-1, 0)) < 0) {
             error("ERROR reading from socket");
         }
 
-        hostname[numbytes] = '\0';
-        // printf("hostname = %s\n", hostname);
+        hostname[numbytes-2] = '\0';
+
         if ((status = check_hostname(hostname, blacklist, len)) == 1) {
             if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
                 error("ERROR writing to socket");
@@ -219,14 +224,15 @@ void start_tcp_server() {
     struct addrinfo serv_addr, cli_addr, *tcp_info;
 
     int list_len = count_lines(BLACKLIST_FILENAME);
-    unsigned char* black_list[list_len];
+    char black_list[list_len][MAXDATASIZE];
 
     bzero((char *) &serv_addr, sizeof(serv_addr));
-    load_blacklist(black_list);
 
-    for ( int i = 0; i < list_len; i++ ) {
-        printf("%s\n", (char*)&black_list[i]);
-    }
+    load_blacklist(black_list, list_len);
+
+    // for ( int i = 0; i < list_len; i++ ) {
+    //     printf("%d elem: %s\n", i, black_list[i]);
+    // }
     serv_addr.ai_family = AF_UNSPEC;
     serv_addr.ai_socktype = SOCK_STREAM;
     serv_addr.ai_flags = AI_PASSIVE;
