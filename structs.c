@@ -21,22 +21,3 @@ struct question {
     unsigned short qtype;
     unsigned short qclass;
 };
-
-struct rdata{
-    unsigned short type;
-    unsigned short rclass;
-    unsigned int ttl;
-    unsigned short rdlength;
-};
-
-struct res_record {
-    unsigned char *name;
-    struct R_DATA *resource;
-    unsigned char *rdata;
-};
- 
-// typedef struct {
-//     unsigned char *name;
-//     struct QUESTION *ques;
-// } query;
-//  

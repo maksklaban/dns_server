@@ -4,33 +4,10 @@
 #include <string.h>
 #include <sys/types.h> 
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <netdb.h>
 
 #include "structs.c"
-
-#define PORTNUMB "50000"
-#define BACKLOG 20
-#define MAX_DNS_REQUST_SIZE 65536
-#define MAXDATASIZE 100
-#define MAXNAMESIZE 255
-#define DNS_PORT "53"
-#define QTYPE_A 1
-#define QCLASS_IN 1
-#define BLACKLIST_FILENAME "blacklist.ini"
-#define SETTINGS_FILENAME "settings.ini"
-
-
-int count_lines(unsigned char* name);
-int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len);
-void load_settings();
-void load_blacklist(char blacklist[][MAXDATASIZE], int len);
-void error(const char *msg);
-void add_dns_name(unsigned char* dns,unsigned char* host);
-void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len);
-void send_dns_request(unsigned char* dns_request, unsigned long len);
-void start_tcp_server();
-void get_dns(unsigned char* hostname, unsigned char* dns_request);
+#include "dns_server.h"
 
 unsigned char dns_ip[20];
 unsigned char error_res[100];
@@ -54,12 +31,7 @@ int count_lines(unsigned char* name) {
 }
 
 int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len) {
-        strtok(hostname, "\n");
-    for ( int i = 0; i < strlen(hostname); i++ ) {
-        printf("%d elem: %d\n", i, hostname[i]);
-    }
     for ( int i = 0; i < len; i++ ) {
-
         if ( strcmp(blacklist[i], hostname) == 0 ) {
             return 1;
         }
@@ -110,11 +82,8 @@ void load_blacklist(char blacklist[][MAXDATASIZE], int list_len) {
     blacklst_file = fopen(BLACKLIST_FILENAME, "r");
     
     for (int i = 0; getline(&buffer, &len, blacklst_file) != -1; i++) {
-        // printf("%d elem: %s\n", it, blacklist[it]);
-        // fgets(buffer, sizeof(buffer), blacklst_file);
         strtok(buffer, "\n");
         strcpy(blacklist[i], buffer);
-        // printf("load = %s\n", blacklist[i]);
     }
 
     free(buffer);
@@ -230,9 +199,6 @@ void start_tcp_server() {
 
     load_blacklist(black_list, list_len);
 
-    // for ( int i = 0; i < list_len; i++ ) {
-    //     printf("%d elem: %s\n", i, black_list[i]);
-    // }
     serv_addr.ai_family = AF_UNSPEC;
     serv_addr.ai_socktype = SOCK_STREAM;
     serv_addr.ai_flags = AI_PASSIVE;
@@ -315,11 +281,4 @@ void get_dns(unsigned char* hostname, unsigned char* dns_request) {
     quest_info->qclass = htons(QCLASS_IN);
     dns_request_size = DNS_HEADER_SIZE + (strlen((const char*)qname) + 1) + sizeof(struct question);
     send_dns_request(dns_request, dns_request_size);
-}
-
-int main() {
-    load_settings();
-    start_tcp_server();
-
-    return 0;
 }
