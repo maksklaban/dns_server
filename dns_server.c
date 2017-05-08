@@ -74,7 +74,7 @@ void load_settings() {
     fclose(settings_file);
 }
 
-void load_blacklist(char blacklist[][MAXDATASIZE], int list_len) {
+void load_blacklist(char blacklist[][MAXDATASIZE]) {
     FILE* blacklst_file;
     char* buffer;
     size_t len = 0;
@@ -197,7 +197,7 @@ void start_tcp_server() {
 
     bzero((char *) &serv_addr, sizeof(serv_addr));
 
-    load_blacklist(black_list, list_len);
+    load_blacklist(black_list);
 
     serv_addr.ai_family = AF_UNSPEC;
     serv_addr.ai_socktype = SOCK_STREAM;
@@ -209,11 +209,9 @@ void start_tcp_server() {
 
     tcp_socket = socket(tcp_info->ai_family, tcp_info->ai_socktype, tcp_info->ai_protocol);
 
-
     if (tcp_socket < 0) {
         error("ERROR opening tcp_socket");
     }
-
 
     if (bind(tcp_socket, tcp_info->ai_addr, tcp_info->ai_addrlen) < 0) {
         error("ERROR on binding");
@@ -222,6 +220,7 @@ void start_tcp_server() {
     if (listen(tcp_socket,BACKLOG) < 0) {
         error("ERROR listen");
     }
+
     freeaddrinfo(tcp_info);
     
     printf("server: waiting for connections...\n");

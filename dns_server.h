@@ -21,7 +21,7 @@
 int count_lines(unsigned char* name);
 int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len);
 void load_settings();
-void load_blacklist(char blacklist[][MAXDATASIZE], int len);
+void load_blacklist(char blacklist[][MAXDATASIZE]);
 void error(const char *msg);
 void add_dns_name(unsigned char* dns,unsigned char* host);
 void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len);
