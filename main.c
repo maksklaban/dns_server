@@ -12,7 +12,7 @@
 
 int main() {
     load_settings();
-    start_tcp_server();
+    start_udp_server();
 
     return 0;
 }

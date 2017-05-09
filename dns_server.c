@@ -113,33 +113,21 @@ void add_dns_name(unsigned char* dns,unsigned char* host) {
 }
 
 
-void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len) {
+void udp_handler(int sock, char* hostname, char blacklist[][MAXDATASIZE], int len) {
     int numbytes;
-    char hostname[MAXNAMESIZE];
     unsigned char dns_request[MAX_DNS_REQUST_SIZE];
     int status;
 
-    bzero(hostname,MAXDATASIZE);
-
-    while (1) {
-        if ((numbytes = recv(sock, hostname, MAXDATASIZE-1, 0)) < 0) {
-            error("ERROR reading from socket");
-        }
-
-        hostname[numbytes-2] = '\0';
-
-        if ((status = check_hostname(hostname, blacklist, len)) == 1) {
-            if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
-                error("ERROR writing to socket");
-            }
-            continue;
-        }
-
-        get_dns(hostname, dns_request);
-
-        if (send(sock, dns_request, MAX_DNS_REQUST_SIZE-1, 0) < 0) {
+    if ((status = check_hostname(hostname, blacklist, len)) == 1) {
+        if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
             error("ERROR writing to socket");
         }
+    }
+    printf("%s\n", hostname);
+    get_dns(hostname, dns_request);
+
+    if (send(sock, dns_request, MAX_DNS_REQUST_SIZE-1, 0) < 0) {
+        error("ERROR writing to socket");
     }
 }
 
@@ -187,10 +175,13 @@ void send_dns_request(unsigned char* dns_request, unsigned long len) {
     close(sock_udp);
 }
 
-void start_tcp_server() {
-    int tcp_socket, new_tcpsock, status;
-    socklen_t clilen;
-    struct addrinfo serv_addr, cli_addr, *tcp_info;
+void start_udp_server() {
+    int numbytes;
+    int udp_socket, new_udpsock, status, cli_status;
+    socklen_t cli_len;
+    struct addrinfo serv_addr, *udp_info;
+    struct sockaddr_storage cli_addr;
+
 
     int list_len = count_lines(BLACKLIST_FILENAME);
     char black_list[list_len][MAXDATASIZE];
@@ -200,52 +191,58 @@ void start_tcp_server() {
     load_blacklist(black_list);
 
     serv_addr.ai_family = AF_UNSPEC;
-    serv_addr.ai_socktype = SOCK_STREAM;
+    serv_addr.ai_socktype = SOCK_DGRAM;
     serv_addr.ai_flags = AI_PASSIVE;
 
-    if ((status = getaddrinfo(NULL, PORTNUMB, &serv_addr, &tcp_info)) != 0) {
+    if ((status = getaddrinfo(NULL, PORTNUMB, &serv_addr, &udp_info)) != 0) {
         error(gai_strerror(status));
     }
 
-    tcp_socket = socket(tcp_info->ai_family, tcp_info->ai_socktype, tcp_info->ai_protocol);
+    udp_socket = socket(udp_info->ai_family, udp_info->ai_socktype, udp_info->ai_protocol);
 
-    if (tcp_socket < 0) {
-        error("ERROR opening tcp_socket");
+    if (udp_socket < 0) {
+        error("ERROR opening udp_socket");
     }
 
-    if (bind(tcp_socket, tcp_info->ai_addr, tcp_info->ai_addrlen) < 0) {
+    if (bind(udp_socket, udp_info->ai_addr, udp_info->ai_addrlen) < 0) {
         error("ERROR on binding");
     }
     
-    if (listen(tcp_socket,BACKLOG) < 0) {
-        error("ERROR listen");
-    }
-
-    freeaddrinfo(tcp_info);
+    freeaddrinfo(udp_info);
     
     printf("server: waiting for connections...\n");
     
     while (1) {
-        clilen = sizeof(cli_addr);
-        new_tcpsock = accept(tcp_socket, (struct sockaddr *) &cli_addr, &clilen);
+        char buf[MAXDATASIZE];
+        cli_len = sizeof(cli_addr);
 
-        if (new_tcpsock < 0) {
-            perror("ERROR on accept");
+        if ((numbytes = recvfrom(udp_socket, buf, MAXDATASIZE-1 , 0, (struct sockaddr *)&cli_addr, &cli_len)) < 0) {
+            perror("ERROR on recive");
+            continue;
+        }
+        buf[numbytes-1] = '\0';
+
+        if ((new_udpsock = socket(cli_addr.ss_family, SOCK_DGRAM, 0)) < 0) {
+            perror("ERROR on socket");
+            continue;
+        }
+        if ((connect(new_udpsock, (struct sockaddr*)&cli_addr, cli_len)) < 0) {
+            perror("ERROR on connect");
             continue;
         }
 
         if (!fork()) {
-            close(tcp_socket);
+            close(udp_socket);
 
-            tcp_handler(new_tcpsock, black_list, list_len);
+            udp_handler(new_udpsock, buf, black_list, list_len);
 
-            close(new_tcpsock);
+            close(new_udpsock);
             exit(0);
         }
-        close(new_tcpsock);
+        close(new_udpsock);
     }
     
-    close(tcp_socket);
+    close(udp_socket);
 }
 
 void get_dns(unsigned char* hostname, unsigned char* dns_request) {

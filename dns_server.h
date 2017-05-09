@@ -5,10 +5,12 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define PORTNUMB "50000"
 #define BACKLOG 20
-#define MAX_DNS_REQUST_SIZE 65536
+#define MAX_DNS_REQUST_SIZE 65000
 #define MAXDATASIZE 100
 #define MAXNAMESIZE 255
 #define DNS_PORT "53"
@@ -24,7 +26,7 @@ void load_settings();
 void load_blacklist(char blacklist[][MAXDATASIZE]);
 void error(const char *msg);
 void add_dns_name(unsigned char* dns,unsigned char* host);
-void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len);
+void udp_handler(int sock, char* hostname, char blacklist[][MAXDATASIZE], int len);
 void send_dns_request(unsigned char* dns_request, unsigned long len);
-void start_tcp_server();
+void start_udp_server();
 void get_dns(unsigned char* hostname, unsigned char* dns_request);
