@@ -9,11 +9,11 @@
 #include "structs.c"
 #include "dns_server.h"
 
-unsigned char dns_ip[20];
-unsigned char error_res[100];
+char dns_ip[20];
+char error_res[100];
 
 
-int count_lines(unsigned char* name) {
+int count_lines(char* name) {
     int line_count = 0;
     char* buff;
     size_t len = 0;
@@ -30,7 +30,7 @@ int count_lines(unsigned char* name) {
     return line_count;
 }
 
-int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len) {
+int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len) {
     for ( int i = 0; i < len; i++ ) {
         if ( strcmp(blacklist[i], hostname) == 0 ) {
             return 1;
@@ -95,7 +95,7 @@ void error(const char *msg) {
     exit(1);
 }
 
-void add_dns_name(unsigned char* dns,unsigned char* host) {
+void add_dns_name(char* dns,char* host) {
     strcat((char*)host,".");
      
     for(int i = 0, host_i = 0; i < strlen((char*)host) ; i++) {
@@ -116,7 +116,7 @@ void add_dns_name(unsigned char* dns,unsigned char* host) {
 void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len) {
     int numbytes;
     char hostname[MAXNAMESIZE];
-    unsigned char dns_request[MAX_DNS_REQUST_SIZE];
+    char dns_request[MAX_DNS_REQUST_SIZE];
     int status;
 
     bzero(hostname,MAXDATASIZE);
@@ -144,12 +144,12 @@ void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len) {
 }
 
 
-void send_dns_request(unsigned char* dns_request, unsigned long len) {
+void send_dns_request(char* dns_request, long len) {
     int sock_udp;
     int udp_status;
     struct sockaddr_storage their_addr;
     struct addrinfo hints, *servinfo, *p;
-    int recv_size;
+    socklen_t recv_size;
 
     bzero((char *) &hints, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -248,16 +248,16 @@ void start_tcp_server() {
     close(tcp_socket);
 }
 
-void get_dns(unsigned char* hostname, unsigned char* dns_request) {
-    unsigned char *qname;
+void get_dns(char* hostname, char* dns_request) {
+    char *qname;
     struct dns_header* dns = NULL;
     struct question* quest_info = NULL;
-    unsigned long dns_request_size;
-    const unsigned long DNS_HEADER_SIZE = sizeof(struct dns_header); 
+    long dns_request_size;
+    const long DNS_HEADER_SIZE = sizeof(struct dns_header); 
     
     dns = (struct dns_header*)dns_request;
 
-    dns->id = (unsigned short) htons(getpid());
+    dns->id = (short) htons(getpid());
     dns->rd = 1;
     dns->tc = 0;
     dns->aa = 0;
@@ -273,7 +273,7 @@ void get_dns(unsigned char* hostname, unsigned char* dns_request) {
     dns->nscount = 0;
     dns->arcount = 0;
 
-    qname =(unsigned char*)&dns_request[DNS_HEADER_SIZE];
+    qname =(char*)&dns_request[DNS_HEADER_SIZE];
     add_dns_name(qname , hostname);
     quest_info = (struct question*)&dns_request[DNS_HEADER_SIZE + (strlen((const char*)qname) + 1)];
     quest_info->qtype = htons(QTYPE_A);

@@ -18,13 +18,13 @@
 #define SETTINGS_FILENAME "settings.ini"
 
 
-int count_lines(unsigned char* name);
-int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len);
+int count_lines(char* name);
+int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len);
 void load_settings();
 void load_blacklist(char blacklist[][MAXDATASIZE]);
 void error(const char *msg);
-void add_dns_name(unsigned char* dns,unsigned char* host);
+void add_dns_name(char* dns,char* host);
 void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len);
-void send_dns_request(unsigned char* dns_request, unsigned long len);
+void send_dns_request(char* dns_request, long len);
 void start_tcp_server();
-void get_dns(unsigned char* hostname, unsigned char* dns_request);
+void get_dns(char* hostname, char* dns_request);
