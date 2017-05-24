@@ -45,9 +45,7 @@ int count_lines(char* name) {
         error("ERROR opening blacklist file");
     }
 
-    while ((getline(&buff, &len, file)) != -1) {
-        line_count++;
-    }
+    for ( ;(getline(&buff, &len, file)) != -1; line_count++);
     
     fclose(file);
     
@@ -55,13 +53,10 @@ int count_lines(char* name) {
 }
 
 int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len) {
-    int i = 0;
-
-    while ( i < len ) {
+    for ( int i = 0; i < len; i++ ) {
         if ( strcmp(blacklist[i], hostname) == 0 ) {
             return 1;
         }
-        i++;
     }
 
     return 0;
@@ -90,6 +85,7 @@ void load_settings() {
     strcpy(dns_ip, buffer);
     
     fgets(buff_err_res, 100, settings_file);
+    
     if ((buffer = strchr(buff_err_res, stop)) == NULL) {
         error("ERROR missed settings");
     }
@@ -104,16 +100,14 @@ void load_settings() {
 void load_blacklist(char blacklist[][MAXDATASIZE]) {
     FILE* blacklst_file;
     char* buffer;
-    int i = 0;
     size_t len = 0;
 
 
     blacklst_file = fopen(BLACKLIST_FILENAME, "r");
     
-    while (getline(&buffer, &len, blacklst_file) != -1) {
+    for (int i = 0; getline(&buffer, &len, blacklst_file) != -1; i++) {
         strtok(buffer, "\n");
         strcpy(blacklist[i], buffer);
-        i++;
     }
 
     free(buffer);
@@ -127,22 +121,19 @@ void error(const char *msg) {
 
 void add_dns_name(char* dns,char* host) {
     strcat((char*)host,".");
-    int i = 0;
-    int host_i = 0;
-     
-    while (i < strlen((char*)host)) {
+
+    for(int i = 0, host_i = 0; i < strlen((char*)host) ; i++) {
         if(host[i]=='.') {
             *dns++ = i-host_i;
 
-            while (host_i < i) {
+            for( ; host_i < i; host_i++) {
                 *dns++=host[host_i];
-                host_i++;
             }
 
             host_i++;
         }
-        i++;
     }
+
     *dns++='\0';
 }
 
@@ -158,6 +149,9 @@ void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len) {
     while (1) {
         if ((numbytes = recv(sock, hostname, MAXDATASIZE-1, 0)) < 0) {
             error("ERROR reading from socket");
+        } else if ( numbytes == 0 ) {
+            perror("Client close connection");
+            break;
         }
 
         hostname[numbytes-2] = '\0';
@@ -194,21 +188,18 @@ void send_dns_request(char* dns_request, long len) {
         error(gai_strerror(udp_status));
     }
 
-    p = servinfo;
-
-    while (p != NULL) {
-        if ((sock_udp = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
-            p = p->ai_next;
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sock_udp = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0) {
             continue;
         }
         break;
     }
 
-    printf("Socket open\n");
     if (p == NULL) {
         error("ERROR opening udp_socket");
     }
+
+    printf("Socket open\n");
 
     printf("Sending Packet...\n");
     if ((sendto(sock_udp, dns_request, len, 0, p->ai_addr, p->ai_addrlen)) < 0) {
@@ -219,6 +210,7 @@ void send_dns_request(char* dns_request, long len) {
     freeaddrinfo(servinfo);
 
     recv_size = sizeof(their_addr);
+
     printf("Recieving Packet...\n");
     if ((recvfrom(sock_udp, dns_request, MAX_DNS_REQUST_SIZE-1, 0, (struct sockaddr *)&their_addr, &recv_size)) < 0) {
         error("ERROR recive dns_request");
@@ -231,7 +223,7 @@ void send_dns_request(char* dns_request, long len) {
 void start_tcp_server() {
     int tcp_socket, new_tcpsock, status, yes;
     socklen_t clilen;
-    struct addrinfo serv_addr, cli_addr, *tcp_info;
+    struct addrinfo serv_addr, cli_addr, *tcp_info, *p;
 
     int list_len = count_lines(BLACKLIST_FILENAME);
     char black_list[list_len][MAXDATASIZE];
@@ -242,29 +234,36 @@ void start_tcp_server() {
 
     serv_addr.ai_family = AF_UNSPEC;
     serv_addr.ai_socktype = SOCK_STREAM;
-    serv_addr.ai_flags = AI_PASSIVE;
+    serv_addr.ai_flags = AI_PASSIVE; // set my ip
 
     if ((status = getaddrinfo(NULL, PORTNUMB, &serv_addr, &tcp_info)) != 0) {
         error(gai_strerror(status));
     }
 
-    tcp_socket = socket(tcp_info->ai_family, tcp_info->ai_socktype, tcp_info->ai_protocol);
-
-    if (tcp_socket < 0) {
-        error("ERROR opening tcp_socket");
-    }
-
+    for (p = tcp_info; p != NULL; p = p->ai_next) {
+        if ((tcp_socket = socket(p->ai_family, p->ai_socktype,
+                p->ai_protocol)) < -1) {
+            continue;
+        }
 // handle "address already in use" error
-    if (setsockopt(tcp_socket, SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes)) == -1) {
-        error("ERROR on setsockopt");
-    } 
+        if (setsockopt(tcp_socket, SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes)) < -1) {
+            error("[tcp_server] ERROR on setsockopt");
+        } 
 
-    if (bind(tcp_socket, tcp_info->ai_addr, tcp_info->ai_addrlen) < 0) {
-        error("ERROR on binding");
+        if (bind(tcp_socket, tcp_info->ai_addr, tcp_info->ai_addrlen) < 0) {
+            close(tcp_socket);
+            perror("[tcp_server] ERROR on binding");
+            continue;
+        }
+        break;
     }
-    
+
+    if ( p == NULL ) {
+        error("[tcp_server] ERROR opening tcp_socket");
+    }
+
     if (listen(tcp_socket,BACKLOG) < 0) {
-        error("ERROR listen");
+        error("[tcp_server] ERROR listen");
     }
 
     freeaddrinfo(tcp_info);
@@ -276,7 +275,7 @@ void start_tcp_server() {
         new_tcpsock = accept(tcp_socket, (struct sockaddr *) &cli_addr, &clilen);
 
         if (new_tcpsock < 0) {
-            perror("ERROR on accept");
+            perror("[tcp_server] ERROR on accept");
             continue;
         }
 
@@ -332,5 +331,5 @@ int main() {
     load_settings();
     start_tcp_server();
 
-    return 0;
+    return 0;   
 }
