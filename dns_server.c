@@ -20,16 +20,14 @@
 #define QCLASS_IN 1
 
 int count_lines(char* name);
-int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len);
+int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len);
 void load_settings();
 void load_blacklist(char blacklist[][MAXDATASIZE]);
 void error(const char *msg);
-void add_dns_name(char* dns,char* host);
+void get_hostname(char* hostname, char* dns_request);
 int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE], int len);
 int send_dns_request(unsigned char* dns_request, long len);
 void start_udp_server();
-void get_dns(char* hostname, char* dns_request);
-
 
 char dns_ip[20];
 char error_res[100];
@@ -52,10 +50,10 @@ int count_lines(char* name) {
     return line_count;
 }
 
-int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len) {
+int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len) {
     for ( int i = 0; i < len; i++ ) {
         if ( strcmp(blacklist[i], hostname) == 0 ) {
-            return 1;
+            return -1;
         }
     }
 
@@ -119,30 +117,25 @@ void error(const char *msg) {
     exit(1);
 }
 
-void add_dns_name(char* dns,char* host) {
-    strcat((char*)host,".");
+void get_hostname(char* hostname, char* dns_request) {
+    for ( int i = 0, j = 1; i < strlen((char*)dns_request); i++, j++) {
+        int label_size = dns_request[i];
 
-    for(int i = 0, host_i = 0; i < strlen((char*)host) ; i++) {
-        if(host[i]=='.') {
-            *dns++ = i-host_i;
-
-            for( ; host_i < i; host_i++) {
-                *dns++=host[host_i];
-            }
-
-            host_i++;
+        for( int x = 0; x < label_size; x++, i++, j++ ) {
+            hostname[i] = dns_request[j];
         }
+        hostname[i] = '.';
     }
 
-    *dns++='\0';
+    hostname[strlen(dns_request) - 1] = '\0';
 }
 
 
 int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE], int len) {
-    int numbytes;
-    unsigned char dns_request[MAX_DNS_REQUST_SIZE];
     int mult_rr;
+    int status;
     char* host;
+    char hostname[100];
     long dns_request_size;
     struct dns_header* head = NULL;
     struct question* quest = NULL;
@@ -150,24 +143,12 @@ int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE]
 
     head = (struct dns_header*)cli_reqv;
     host = (char*)&cli_reqv[sizeof(struct dns_header)];
+
+    get_hostname(hostname, host);
+
     mult_rr = (ntohs(head->ancount) + ntohs(head->nscount) + ntohs(head->arcount));
-    // head->id = (short) htons(getpid());
-    // head->rd = 1;
-    // head->tc = 0;
-    // head->aa = 0;
-    // head->opcode = 0;
-    // head->qr = 0;
-    // head->rcode = 0;
-    // head->cd = 0;
-    // head->ad = 0;
-    // head->z = 0;
-    // head->ra = 0;
-    // head->qdcount = htons(1);
-    // head->ancount = 0;
-    // head->nscount = 0;
-    // head->arcount = 0;
-    // quest = (struct question*)&cli_reqv[sizeof(struct dns_header) + strlen((const char*)host)];
-    dns_request_size = sizeof(struct dns_header) + (strlen((const char*)host) + 1) + (ntohs(head->qdcount) * sizeof(struct question)) + (mult_rr * sizeof(struct resource_rec));
+    dns_request_size = (sizeof(struct dns_header) + (strlen((const char*)host) + 1)
+    + (ntohs(head->qdcount) * sizeof(struct question)) + (mult_rr * sizeof(struct resource_rec)));
     // printf("size %ld\n", dns_request_size);
     // printf("id - %d\n", head->id);
     // printf("rd - %d\n", head->rd);
@@ -189,21 +170,11 @@ int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE]
 
     // printf("qtype %d\n", ntohs(quest->qtype));
     // printf("qclass %d\n", ntohs(quest->qclass));
-    // // if ((status = check_hostname(hostname, blacklist, len)) == 1) {
-    //     if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
-    //         error("ERROR writing to socket");
-    //     }
-    // }
+    if ((status = check_hostname(hostname, blacklist, len)) < 0 ) {
+        return status;
+    }
 
-    // dns_request_size = sizeof(struct dns_header) + (strlen((const char*)hostname)) + sizeof(struct question);
-
-    // printf("size %ld\n", dns_request_size);
-    // get_dns(hostname, dns_request);
     return send_dns_request(cli_reqv, dns_request_size);
-
-    // if (send(sock, cli_reqv, MAX_DNS_REQUST_SIZE-1, 0) < 0) {
-    //     error("ERROR writing to socket");
-    // }
 }
 //     int numbytes;
 //     char hostname[MAXNAMESIZE];
@@ -369,11 +340,19 @@ void start_udp_server() {
 
         numbytes = udp_handler(udp_socket, client_reqv, black_list, list_len);
 
+        if (numbytes < 0) {
+            if (sendto(udp_socket, error_res, sizeof(error_res), 0, (struct sockaddr*)&cli_addr, sizeof(cli_addr)) < 0) {
+                error("[udp_server] ERROR on send");
+            }
+        } else {
+            if (sendto(udp_socket, client_reqv, numbytes, 0, (struct sockaddr*)&cli_addr, sizeof(cli_addr)) < 0) {
+                error("[udp_server] ERROR on send");
+            }
+        }
         // if ((new_udpsock = socket(cli_addr.ss_family, SOCK_DGRAM, 0)) < 0) {
         //     perror("[udp_server] ERROR on client UDP socket");
         //     continue;
         // }
-        sendto(udp_socket, client_reqv, numbytes, 0, (struct sockaddr*)&cli_addr, sizeof(cli_addr));
 
         // if (numbytes < 0) {
         //     error("[udp_server] ERROR on send");
@@ -394,48 +373,12 @@ void start_udp_server() {
         //     exit(0);
         // }
 
-        close(new_udpsock);
+        // close(new_udpsock);
     }
     
     close(udp_socket);
 }
 
-void get_dns(char* hostname, char* dns_request) {
-    // char dns_request[1000];
-    char *qname;
-    struct dns_header* dns = NULL;
-    struct question* quest_info = NULL;
-    long dns_request_size;
-    const long DNS_HEADER_SIZE = sizeof(struct dns_header); 
-    
-    dns = (struct dns_header*)dns_request;
-
-    dns->id = (short) htons(getpid());
-    dns->rd = 1;
-    dns->tc = 0;
-    dns->aa = 0;
-    dns->opcode = 0;
-    dns->qr = 0;
-    dns->rcode = 0;
-    dns->cd = 0;
-    dns->ad = 0;
-    dns->z = 0;
-    dns->ra = 0;
-    dns->qdcount = htons(1);
-    dns->ancount = 0;
-    dns->nscount = 0;
-    dns->arcount = 0;
-
-    qname =(char*)&dns_request[DNS_HEADER_SIZE];
-    add_dns_name(qname , hostname);
-    quest_info = (struct question*)&dns_request[DNS_HEADER_SIZE + (strlen((const char*)qname) + 1)];
-    quest_info->qtype = htons(QTYPE_A);
-    quest_info->qclass = htons(QCLASS_IN);
-    dns_request_size = DNS_HEADER_SIZE + (strlen((const char*)qname) + 1) + sizeof(struct question);
-    printf("%ld\n",dns_request_size );
-    // return dns_request_size;
-    // send_dns_request(dns_request, dns_request_size);
-}
 
 int main() {
     load_settings();
