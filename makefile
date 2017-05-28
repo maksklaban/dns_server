@@ -5,7 +5,7 @@ OBJS = dns_server.o
 SRCS = dns_server.c
 
 $(OUTFILE): $(OBJS)
-	$(CC) $(CFLAGS) -o $(OUTFILE) $(OBJS)
+	$(CC) $(CFLAGS) -o $(OUTFILE) $(OBJS) && ./$(OUTFILE)
 $(OBJS): $(SRCS)
 	$(CC) $(CFLAGS) -c $(SRCS)
 clean:

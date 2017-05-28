@@ -10,7 +10,7 @@
 
 #define PORTNUMB "50000"
 #define BACKLOG 20
-#define MAX_DNS_REQUST_SIZE 65536
+#define MAX_DNS_REQUST_SIZE 10000
 #define MAXDATASIZE 100
 #define MAXNAMESIZE 255
 #define BLACKLIST_FILENAME "blacklist.ini"
@@ -20,14 +20,14 @@
 #define QCLASS_IN 1
 
 int count_lines(char* name);
-int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len);
+int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len);
 void load_settings();
 void load_blacklist(char blacklist[][MAXDATASIZE]);
 void error(const char *msg);
 void add_dns_name(char* dns,char* host);
-void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len);
-void send_dns_request(char* dns_request, long len);
-void start_tcp_server();
+int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE], int len);
+int send_dns_request(unsigned char* dns_request, long len);
+void start_udp_server();
 void get_dns(char* hostname, char* dns_request);
 
 
@@ -52,7 +52,7 @@ int count_lines(char* name) {
     return line_count;
 }
 
-int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len) {
+int check_hostname(unsigned char* hostname, char blacklist[][MAXDATASIZE], int len) {
     for ( int i = 0; i < len; i++ ) {
         if ( strcmp(blacklist[i], hostname) == 0 ) {
             return 1;
@@ -138,60 +138,127 @@ void add_dns_name(char* dns,char* host) {
 }
 
 
-void tcp_handler(int sock, char blacklist[][MAXDATASIZE], int len) {
+int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE], int len) {
     int numbytes;
-    char hostname[MAXNAMESIZE];
-    char dns_request[MAX_DNS_REQUST_SIZE];
-    int status;
-    char* quest_info;
+    unsigned char dns_request[MAX_DNS_REQUST_SIZE];
+    int mult_rr;
+    char* host;
+    long dns_request_size;
+    struct dns_header* head = NULL;
+    struct question* quest = NULL;
 
-    bzero(hostname,MAXDATASIZE);
+
+    head = (struct dns_header*)cli_reqv;
+    host = (char*)&cli_reqv[sizeof(struct dns_header)];
+    mult_rr = (ntohs(head->ancount) + ntohs(head->nscount) + ntohs(head->arcount));
+    // head->id = (short) htons(getpid());
+    // head->rd = 1;
+    // head->tc = 0;
+    // head->aa = 0;
+    // head->opcode = 0;
+    // head->qr = 0;
+    // head->rcode = 0;
+    // head->cd = 0;
+    // head->ad = 0;
+    // head->z = 0;
+    // head->ra = 0;
+    // head->qdcount = htons(1);
+    // head->ancount = 0;
+    // head->nscount = 0;
+    // head->arcount = 0;
+    // quest = (struct question*)&cli_reqv[sizeof(struct dns_header) + strlen((const char*)host)];
+    dns_request_size = sizeof(struct dns_header) + (strlen((const char*)host) + 1) + (ntohs(head->qdcount) * sizeof(struct question)) + (mult_rr * sizeof(struct resource_rec));
+    // printf("size %ld\n", dns_request_size);
+    // printf("id - %d\n", head->id);
+    // printf("rd - %d\n", head->rd);
+    // printf("tc - %d\n", head->tc);
+    // printf("aa - %d\n", head->aa);
+    // printf("opcode - %d\n", head->opcode);
+    // printf("qr - %d\n", head->qr);
+    // printf("rcode - %d\n", head->rcode);
+    // printf("cd - %d\n", head->cd);
+    // printf("ad - %d\n", head->ad);
+    // printf("z - %d\n", head->z);
+    // printf("ra - %d\n", head->ra);
+    // printf("qdcount - %d\n", ntohs(head->qdcount));
+    // printf("ancount - %d\n", head->ancount);
+    // printf("nscount - %d\n", head->nscount);
+    // printf("arcount - %d\n", ntohs(head->arcount));
     
-    while (1) {
-        if ((numbytes = recv(sock, hostname, MAXDATASIZE-1, 0)) < 0) {
-            perror("[tcp_handler]ERROR reading from socket");
-            break;
-        } else if ( numbytes == 0 ) {
-            perror("[tcp_handler]Client close connection");
-            break;
-        }
+    // printf("host %s\n", host);
 
-        // hostname[numbytes-2] = '\0';
-        hostname[numbytes] = '\0';
-        // head = (struct dns_header*)hostname;
-        quest_info = (char*)&hostname[sizeof(struct dns_header) + 2];
-        // printf("%s\n", quest_info);
-        for ( int i = 0; i < strlen(quest_info); i++ ) {
-            printf("Numb %d; val %c; int_val %d\n",i, quest_info[i], quest_info[i] );
-        }
+    // printf("qtype %d\n", ntohs(quest->qtype));
+    // printf("qclass %d\n", ntohs(quest->qclass));
+    // // if ((status = check_hostname(hostname, blacklist, len)) == 1) {
+    //     if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
+    //         error("ERROR writing to socket");
+    //     }
+    // }
 
-        // printf("ID %d\n", htons(head->id));
-        // printf("RD %d\n", htons(head->rd));
-        // for ( int i = 0; i < (numbytes - 1); i++ ) {
-        //     printf("Numer %d - value %d - size - %zu\n", i, hostname[i], sizeof hostname[i]);
-        // }
-        // printf("hostname %d\n", numbytes);
+    // dns_request_size = sizeof(struct dns_header) + (strlen((const char*)hostname)) + sizeof(struct question);
 
-        if ((status = check_hostname(hostname, blacklist, len)) == 1) {
-            if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
-                error("[tcp_handler]ERROR writing to socket");
-            }
-            continue;
-        }
+    // printf("size %ld\n", dns_request_size);
+    // get_dns(hostname, dns_request);
+    return send_dns_request(cli_reqv, dns_request_size);
 
-        get_dns(hostname, dns_request);
-
-        if (send(sock, dns_request, MAX_DNS_REQUST_SIZE-1, 0) < 0) {
-            perror("[tcp_handler]ERROR writing to socket");
-            break;
-        }
-    }
+    // if (send(sock, cli_reqv, MAX_DNS_REQUST_SIZE-1, 0) < 0) {
+    //     error("ERROR writing to socket");
+    // }
 }
+//     int numbytes;
+//     char hostname[MAXNAMESIZE];
+//     char dns_request[MAX_DNS_REQUST_SIZE];
+//     int status;
+//     char* quest_info;
+
+//     bzero(hostname,MAXDATASIZE);
+    
+//     while (1) {
+//         if ((numbytes = recv(sock, hostname, MAXDATASIZE-1, 0)) < 0) {
+//             perror("[udp_handler]ERROR reading from socket");
+//             break;
+//         } else if ( numbytes == 0 ) {
+//             perror("[udp_handler]Client close connection");
+//             break;
+//         }
+
+//         // hostname[numbytes-2] = '\0';
+//         hostname[numbytes] = '\0';
+//         // head = (struct dns_header*)hostname;
+//         quest_info = (char*)&hostname[sizeof(struct dns_header) + 2];
+//         // printf("%s\n", quest_info);
+//         for ( int i = 0; i < strlen(quest_info); i++ ) {
+//             printf("Numb %d; val %c; int_val %d\n",i, quest_info[i], quest_info[i] );
+//         }
+
+//         // printf("ID %d\n", htons(head->id));
+//         // printf("RD %d\n", htons(head->rd));
+//         // for ( int i = 0; i < (numbytes - 1); i++ ) {
+//         //     printf("Numer %d - value %d - size - %zu\n", i, hostname[i], sizeof hostname[i]);
+//         // }
+//         // printf("hostname %d\n", numbytes);
+
+//         if ((status = check_hostname(hostname, blacklist, len)) == 1) {
+//             if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
+//                 error("[udp_handler]ERROR writing to socket");
+//             }
+//             continue;
+//         }
+
+//         get_dns(hostname, dns_request);
+
+//         if (send(sock, dns_request, MAX_DNS_REQUST_SIZE-1, 0) < 0) {
+//             perror("[udp_handler]ERROR writing to socket");
+//             break;
+//         }
+//     }
+// }
 
 
-void send_dns_request(char* dns_request, long len) {
+int send_dns_request(unsigned char* dns_request, long len) {
     int sock_udp;
     int udp_status;
+    int numbytes;
     struct sockaddr_storage their_addr;
     struct addrinfo hints, *servinfo, *p;
     socklen_t recv_size;
@@ -229,18 +296,22 @@ void send_dns_request(char* dns_request, long len) {
     recv_size = sizeof(their_addr);
 
     printf("[send_dns]Recieving Packet...\n");
-    if ((recvfrom(sock_udp, dns_request, MAX_DNS_REQUST_SIZE-1, 0, (struct sockaddr *)&their_addr, &recv_size)) < 0) {
+    if ((numbytes = recvfrom(sock_udp, dns_request, MAX_DNS_REQUST_SIZE-1, 0, (struct sockaddr *)&their_addr, &recv_size)) < 0) {
         error("[send_dns]ERROR recive dns_request");
     }
     printf("[send_dns]Done\n");
 
     close(sock_udp);
+
+    return numbytes;
 }
 
-void start_tcp_server() {
-    int tcp_socket, new_tcpsock, status, yes;
+void start_udp_server() {
+    int udp_socket, new_udpsock;
+    int status, numbytes;
     socklen_t clilen;
-    struct addrinfo serv_addr, cli_addr, *tcp_info, *p;
+    struct addrinfo serv_addr, *tcp_info, *p;
+    struct sockaddr_storage cli_addr;
 
     int list_len = count_lines(BLACKLIST_FILENAME);
     char black_list[list_len][MAXDATASIZE];
@@ -250,7 +321,7 @@ void start_tcp_server() {
     load_blacklist(black_list);
 
     serv_addr.ai_family = AF_UNSPEC;
-    serv_addr.ai_socktype = SOCK_STREAM;
+    serv_addr.ai_socktype = SOCK_DGRAM;
     serv_addr.ai_flags = AI_PASSIVE; // set my ip
 
     if ((status = getaddrinfo(NULL, PORTNUMB, &serv_addr, &tcp_info)) != 0) {
@@ -258,59 +329,79 @@ void start_tcp_server() {
     }
 
     for (p = tcp_info; p != NULL; p = p->ai_next) {
-        if ((tcp_socket = socket(p->ai_family, p->ai_socktype,
+        if ((udp_socket = socket(p->ai_family, p->ai_socktype,
                 p->ai_protocol)) < -1) {
             continue;
         }
-// handle "address already in use" error
-        if (setsockopt(tcp_socket, SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes)) < -1) {
-            error("[tcp_server] ERROR on setsockopt");
-        } 
 
-        if (bind(tcp_socket, tcp_info->ai_addr, tcp_info->ai_addrlen) < 0) {
-            close(tcp_socket);
-            perror("[tcp_server] ERROR on binding");
+        if (bind(udp_socket, tcp_info->ai_addr, tcp_info->ai_addrlen) < 0) {
+            close(udp_socket);
+            perror("[udp_server] ERROR on binding");
             continue;
         }
         break;
     }
 
     if ( p == NULL ) {
-        error("[tcp_server] ERROR opening tcp_socket");
-    }
-
-    if (listen(tcp_socket,BACKLOG) < 0) {
-        error("[tcp_server] ERROR listen");
+        error("[udp_server] ERROR opening udp_socket");
     }
 
     freeaddrinfo(tcp_info);
     
-    printf("[tcp_server]: waiting for connections...\n");
+    printf("[udp_server]: waiting for connections...\n");
     
     while (1) {
+        char client_reqv[MAX_DNS_REQUST_SIZE];
+        memset(&client_reqv, 0, sizeof(client_reqv));
+
         clilen = sizeof(cli_addr);
-        new_tcpsock = accept(tcp_socket, (struct sockaddr *) &cli_addr, &clilen);
+        numbytes = recvfrom(udp_socket, client_reqv, MAX_DNS_REQUST_SIZE-1, 0, (struct sockaddr*)&cli_addr, &clilen);
 
-        if (new_tcpsock < 0) {
-            perror("[tcp_server] ERROR on accept");
-            continue;
+
+        if (numbytes < 0) {
+            error("[udp_server] ERROR on rcv");
+            // continue;
         }
+        // printf("before - %d\n", strlen((char*)client_reqv));
+        // client_reqv[numbytes-1] = '\0';
+        // printf("after - %d\n", strlen((char*)client_reqv));
+        // printf("bytes %d\n", numbytes);
 
-        if (!fork()) {
-            close(tcp_socket);
+        numbytes = udp_handler(udp_socket, client_reqv, black_list, list_len);
 
-            tcp_handler(new_tcpsock, black_list, list_len);
+        // if ((new_udpsock = socket(cli_addr.ss_family, SOCK_DGRAM, 0)) < 0) {
+        //     perror("[udp_server] ERROR on client UDP socket");
+        //     continue;
+        // }
+        sendto(udp_socket, client_reqv, numbytes, 0, (struct sockaddr*)&cli_addr, sizeof(cli_addr));
 
-            close(new_tcpsock);
-            exit(0);
-        }
-        close(new_tcpsock);
+        // if (numbytes < 0) {
+        //     error("[udp_server] ERROR on send");
+        //     // continue;
+        // }
+        
+        // if ((connect(new_udpsock, (struct sockaddr*)&cli_addr, clilen)) < 0) {
+        //     perror("[udp_server] ERROR on connect client");
+        //     continue;
+        // }
+
+        // if (!fork()) {
+        //     close(udp_socket);
+
+        //     udp_handler(new_udpsock, client_reqv, black_list, list_len);
+
+        //     close(new_udpsock);
+        //     exit(0);
+        // }
+
+        close(new_udpsock);
     }
     
-    close(tcp_socket);
+    close(udp_socket);
 }
 
 void get_dns(char* hostname, char* dns_request) {
+    // char dns_request[1000];
     char *qname;
     struct dns_header* dns = NULL;
     struct question* quest_info = NULL;
@@ -341,12 +432,14 @@ void get_dns(char* hostname, char* dns_request) {
     quest_info->qtype = htons(QTYPE_A);
     quest_info->qclass = htons(QCLASS_IN);
     dns_request_size = DNS_HEADER_SIZE + (strlen((const char*)qname) + 1) + sizeof(struct question);
-    send_dns_request(dns_request, dns_request_size);
+    printf("%ld\n",dns_request_size );
+    // return dns_request_size;
+    // send_dns_request(dns_request, dns_request_size);
 }
 
 int main() {
     load_settings();
-    start_tcp_server();
+    start_udp_server();
 
     return 0;   
 }

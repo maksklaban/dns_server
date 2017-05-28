@@ -21,3 +21,12 @@ struct question {
     unsigned short qtype;
     unsigned short qclass;
 };
+
+struct resource_rec {
+    unsigned char owner;
+    unsigned short rtype;
+    unsigned short rclass;
+    unsigned int ttl;
+    unsigned short rdata_len;
+    unsigned char rdata;
+};
