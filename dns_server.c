@@ -131,7 +131,7 @@ int udp_handler(int sock, char* cli_reqv, char blacklist[][MAXDATASIZE], int len
     int mult_rr;
     int status;
     char* host;
-    char hostname[100];
+    char hostname[MAXDATASIZE];
     long dns_request_size;
     // used for calc quantity of RRs
     struct dns_header* head = NULL;
@@ -267,7 +267,6 @@ void start_udp_server() {
 
         clilen = sizeof(cli_addr);
         numbytes = recvfrom(udp_socket, client_reqv, MAX_DNS_REQUST_SIZE-1, 0, (struct sockaddr*)&cli_addr, &clilen);
-
 
         if (numbytes < 0) {
             error("[udp_server] ERROR on rcv");
