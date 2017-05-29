@@ -1,53 +1,26 @@
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h> 
-#include <sys/socket.h>
-#include <netdb.h>
-
-#include "structs.c"
-
-#define PORTNUMB "50000"
-#define BACKLOG 20
-#define MAX_DNS_REQUST_SIZE 10000
-#define MAXDATASIZE 100
-#define MAXNAMESIZE 255
-#define MAX_ERR_RESP_LEN 50
-#define BLACKLIST_FILENAME "blacklist.ini"
-#define SETTINGS_FILENAME "settings.ini"
-#define DNS_PORT "53"
-#define QTYPE_A 1
-#define QCLASS_IN 1
-
-int count_lines(char* name);
-int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len);
-int load_settings();
-void load_blacklist(char blacklist[][MAXDATASIZE]);
-void error(const char *msg);
-void get_hostname(char* hostname, char* dns_request);
-int udp_handler(int sock, char* cli_reqv, char blacklist[][MAXDATASIZE], int len);
-int send_dns_request(char* dns_request, long len);
-void start_udp_server();
+#include "dns_server.h"
 
 char dns_ip[INET6_ADDRSTRLEN];
 char error_res[MAX_ERR_RESP_LEN];
 
-// TODO: Delete getline fun
 int count_lines(char* name) {
-    int line_count = 0;
-    char* buff;
-    size_t len = 0;
     FILE* file;
+    char buff[MAXDATASIZE];
+    int line_count = 0;
 
     if ( (file = fopen(name, "r")) == NULL ) {
         error("[count_lines]ERROR opening blacklist file");
     }
 
-    for ( ;(getline(&buff, &len, file)) != -1; line_count++);
+    for ( ;(fgets(buff, MAXDATASIZE, file)) != NULL; ) {
+        if ( buff[0] == '/') {
+            continue;
+        }
+        line_count++;
+    }
     
     fclose(file);
-    
+
     return line_count;
 }
 
@@ -99,21 +72,21 @@ int load_settings() {
     return flag;
 }
 
-// TODO Delete getline fun
 void load_blacklist(char blacklist[][MAXDATASIZE]) {
     FILE* blacklst_file;
-    char* buffer;
-    size_t len = 0;
-
+    char buffer[MAXDATASIZE];
 
     blacklst_file = fopen(BLACKLIST_FILENAME, "r");
     
-    for (int i = 0; getline(&buffer, &len, blacklst_file) != -1; i++) {
-        strtok(buffer, "\n");
+    for (int i = 0; fgets(buffer, MAXDATASIZE, blacklst_file) != NULL; ) {
+        if (buffer[0] == '/') {
+            continue;
+        }
+        buffer[strlen(buffer) - 1] = 0;
         strcpy(blacklist[i], buffer);
+        i++;
     }
 
-    free(buffer);
     fclose(blacklst_file);
 }
 
