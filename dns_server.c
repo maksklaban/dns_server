@@ -13,6 +13,7 @@
 #define MAX_DNS_REQUST_SIZE 10000
 #define MAXDATASIZE 100
 #define MAXNAMESIZE 255
+#define MAX_ERR_RESP_LEN 50
 #define BLACKLIST_FILENAME "blacklist.ini"
 #define SETTINGS_FILENAME "settings.ini"
 #define DNS_PORT "53"
@@ -21,16 +22,16 @@
 
 int count_lines(char* name);
 int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len);
-void load_settings();
+int load_settings();
 void load_blacklist(char blacklist[][MAXDATASIZE]);
 void error(const char *msg);
 void get_hostname(char* hostname, char* dns_request);
-int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE], int len);
-int send_dns_request(unsigned char* dns_request, long len);
+int udp_handler(int sock, char* cli_reqv, char blacklist[][MAXDATASIZE], int len);
+int send_dns_request(char* dns_request, long len);
 void start_udp_server();
 
-char dns_ip[20];
-char error_res[100];
+char dns_ip[INET6_ADDRSTRLEN];
+char error_res[MAX_ERR_RESP_LEN];
 
 // TODO: Delete getline fun
 int count_lines(char* name) {
@@ -60,41 +61,45 @@ int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len) {
     return 0;
 }
 
-void load_settings() {
+int load_settings() {
     FILE* settings_file;
-
-    char* buffer;
-    char stop = ' ';
-    char buff_ip[20];
-    char buff_err_res[100];
+    char buff[MAX_ERR_RESP_LEN];
+    int flag = -2;
 
     if ((settings_file = fopen(SETTINGS_FILENAME, "r")) == NULL) {
-        error("[load_settings]ERROR opening settings file");
-    }
-    
-    fgets(buff_ip, 50, settings_file);
-    
-    if ((buffer = strchr(buff_ip, stop)) == NULL) {
-        error("[load_settings]ERROR missed settings");
+        error("[config parse] Missing conf file");
     }
 
-    buffer++;
-    strtok(buffer, "\n");
-    strcpy(dns_ip, buffer);
-    
-    fgets(buff_err_res, 100, settings_file);
-    
-    if ((buffer = strchr(buff_err_res, stop)) == NULL) {
-        error("[load_settings]ERROR missed settings");
-    }
+    for ( ; fgets(buff, MAX_ERR_RESP_LEN, settings_file) != NULL; ) {
+        if (buff[0] == '/') {
+            continue;
+        }
+        if (strcmp(buff, "[server]\n") == 0) {
+            flag += 1;
+            
+            if (fgets(dns_ip, INET6_ADDRSTRLEN, settings_file) == NULL || dns_ip[0] == '\n' || dns_ip[0] == '/') {
+                fprintf(stderr, "[config parse] Missing server setting\n");
+                exit(1);
+            }
 
-    buffer++;
-    strtok(buffer, "\n");
-    strcpy(error_res, buffer);
+            dns_ip[strlen(dns_ip) - 1] = 0;
+        } else if (strcmp(buff, "[error_response]\n") == 0) {
+            flag += 1;
+
+            if (fgets(error_res, MAX_ERR_RESP_LEN, settings_file) == NULL || error_res[0] == '\n' || error_res[0] == '/') {
+                fprintf(stderr, "[config parse] Missing error_res setting\n");
+                exit(1);
+            }
+            error_res[strlen(error_res) - 1] = 0;
+        }
+    }
 
     fclose(settings_file);
+
+    return flag;
 }
 
+// TODO Delete getline fun
 void load_blacklist(char blacklist[][MAXDATASIZE]) {
     FILE* blacklst_file;
     char* buffer;
@@ -131,14 +136,13 @@ void get_hostname(char* hostname, char* dns_request) {
 }
 
 
-int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE], int len) {
+int udp_handler(int sock, char* cli_reqv, char blacklist[][MAXDATASIZE], int len) {
     int mult_rr;
     int status;
     char* host;
     char hostname[100];
     long dns_request_size;
     struct dns_header* head = NULL;
-    struct question* quest = NULL;
 
 
     head = (struct dns_header*)cli_reqv;
@@ -147,86 +151,18 @@ int udp_handler(int sock, unsigned char* cli_reqv, char blacklist[][MAXDATASIZE]
     get_hostname(hostname, host);
 
     mult_rr = (ntohs(head->ancount) + ntohs(head->nscount) + ntohs(head->arcount));
+
     dns_request_size = (sizeof(struct dns_header) + (strlen((const char*)host) + 1)
     + (ntohs(head->qdcount) * sizeof(struct question)) + (mult_rr * sizeof(struct resource_rec)));
-    // printf("size %ld\n", dns_request_size);
-    // printf("id - %d\n", head->id);
-    // printf("rd - %d\n", head->rd);
-    // printf("tc - %d\n", head->tc);
-    // printf("aa - %d\n", head->aa);
-    // printf("opcode - %d\n", head->opcode);
-    // printf("qr - %d\n", head->qr);
-    // printf("rcode - %d\n", head->rcode);
-    // printf("cd - %d\n", head->cd);
-    // printf("ad - %d\n", head->ad);
-    // printf("z - %d\n", head->z);
-    // printf("ra - %d\n", head->ra);
-    // printf("qdcount - %d\n", ntohs(head->qdcount));
-    // printf("ancount - %d\n", head->ancount);
-    // printf("nscount - %d\n", head->nscount);
-    // printf("arcount - %d\n", ntohs(head->arcount));
-    
-    // printf("host %s\n", host);
 
-    // printf("qtype %d\n", ntohs(quest->qtype));
-    // printf("qclass %d\n", ntohs(quest->qclass));
     if ((status = check_hostname(hostname, blacklist, len)) < 0 ) {
         return status;
     }
 
     return send_dns_request(cli_reqv, dns_request_size);
 }
-//     int numbytes;
-//     char hostname[MAXNAMESIZE];
-//     char dns_request[MAX_DNS_REQUST_SIZE];
-//     int status;
-//     char* quest_info;
 
-//     bzero(hostname,MAXDATASIZE);
-    
-//     while (1) {
-//         if ((numbytes = recv(sock, hostname, MAXDATASIZE-1, 0)) < 0) {
-//             perror("[udp_handler]ERROR reading from socket");
-//             break;
-//         } else if ( numbytes == 0 ) {
-//             perror("[udp_handler]Client close connection");
-//             break;
-//         }
-
-//         // hostname[numbytes-2] = '\0';
-//         hostname[numbytes] = '\0';
-//         // head = (struct dns_header*)hostname;
-//         quest_info = (char*)&hostname[sizeof(struct dns_header) + 2];
-//         // printf("%s\n", quest_info);
-//         for ( int i = 0; i < strlen(quest_info); i++ ) {
-//             printf("Numb %d; val %c; int_val %d\n",i, quest_info[i], quest_info[i] );
-//         }
-
-//         // printf("ID %d\n", htons(head->id));
-//         // printf("RD %d\n", htons(head->rd));
-//         // for ( int i = 0; i < (numbytes - 1); i++ ) {
-//         //     printf("Numer %d - value %d - size - %zu\n", i, hostname[i], sizeof hostname[i]);
-//         // }
-//         // printf("hostname %d\n", numbytes);
-
-//         if ((status = check_hostname(hostname, blacklist, len)) == 1) {
-//             if (send(sock, error_res, MAXDATASIZE-1, 0) < 0) {
-//                 error("[udp_handler]ERROR writing to socket");
-//             }
-//             continue;
-//         }
-
-//         get_dns(hostname, dns_request);
-
-//         if (send(sock, dns_request, MAX_DNS_REQUST_SIZE-1, 0) < 0) {
-//             perror("[udp_handler]ERROR writing to socket");
-//             break;
-//         }
-//     }
-// }
-
-
-int send_dns_request(unsigned char* dns_request, long len) {
+int send_dns_request(char* dns_request, long len) {
     int sock_udp;
     int udp_status;
     int numbytes;
@@ -278,7 +214,7 @@ int send_dns_request(unsigned char* dns_request, long len) {
 }
 
 void start_udp_server() {
-    int udp_socket, new_udpsock;
+    int udp_socket;
     int status, numbytes;
     socklen_t clilen;
     struct addrinfo serv_addr, *tcp_info, *p;
@@ -323,6 +259,7 @@ void start_udp_server() {
     
     while (1) {
         char client_reqv[MAX_DNS_REQUST_SIZE];
+
         memset(&client_reqv, 0, sizeof(client_reqv));
 
         clilen = sizeof(cli_addr);
@@ -331,12 +268,7 @@ void start_udp_server() {
 
         if (numbytes < 0) {
             error("[udp_server] ERROR on rcv");
-            // continue;
         }
-        // printf("before - %d\n", strlen((char*)client_reqv));
-        // client_reqv[numbytes-1] = '\0';
-        // printf("after - %d\n", strlen((char*)client_reqv));
-        // printf("bytes %d\n", numbytes);
 
         numbytes = udp_handler(udp_socket, client_reqv, black_list, list_len);
 
@@ -349,31 +281,6 @@ void start_udp_server() {
                 error("[udp_server] ERROR on send");
             }
         }
-        // if ((new_udpsock = socket(cli_addr.ss_family, SOCK_DGRAM, 0)) < 0) {
-        //     perror("[udp_server] ERROR on client UDP socket");
-        //     continue;
-        // }
-
-        // if (numbytes < 0) {
-        //     error("[udp_server] ERROR on send");
-        //     // continue;
-        // }
-        
-        // if ((connect(new_udpsock, (struct sockaddr*)&cli_addr, clilen)) < 0) {
-        //     perror("[udp_server] ERROR on connect client");
-        //     continue;
-        // }
-
-        // if (!fork()) {
-        //     close(udp_socket);
-
-        //     udp_handler(new_udpsock, client_reqv, black_list, list_len);
-
-        //     close(new_udpsock);
-        //     exit(0);
-        // }
-
-        // close(new_udpsock);
     }
     
     close(udp_socket);
@@ -381,7 +288,10 @@ void start_udp_server() {
 
 
 int main() {
-    load_settings();
+    if (load_settings() < 0) {
+        fprintf(stderr, "[config parse] Invalid config file format\n");
+        exit(1);
+    }
     start_udp_server();
 
     return 0;   
