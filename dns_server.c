@@ -1,8 +1,10 @@
 #include "dns_server.h"
 
+// store the values from conf file
 char dns_ip[INET6_ADDRSTRLEN];
 char error_res[MAX_ERR_RESP_LEN];
 
+// counts the number of banned domain in blacklist file and return counter
 int count_lines(char* name) {
     FILE* file;
     char buff[MAXDATASIZE];
@@ -13,6 +15,7 @@ int count_lines(char* name) {
     }
 
     for ( ;(fgets(buff, MAXDATASIZE, file)) != NULL; ) {
+        // check if commended
         if ( buff[0] == '/') {
             continue;
         }
@@ -24,6 +27,8 @@ int count_lines(char* name) {
     return line_count;
 }
 
+// take needle hostname and looking for match in the blacklist. 
+// If match - return -1, else - return zero
 int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len) {
     for ( int i = 0; i < len; i++ ) {
         if ( strcmp(blacklist[i], hostname) == 0 ) {
@@ -34,9 +39,12 @@ int check_hostname(char* hostname, char blacklist[][MAXDATASIZE], int len) {
     return 0;
 }
 
+// load settings from config file, store value in global variable
+// return zero if success, if error - return negative value
 int load_settings() {
     FILE* settings_file;
     char buff[MAX_ERR_RESP_LEN];
+    // this flag check for all settings
     int flag = -2;
 
     if ((settings_file = fopen(SETTINGS_FILENAME, "r")) == NULL) {
@@ -50,15 +58,18 @@ int load_settings() {
         if (strcmp(buff, "[server]\n") == 0) {
             flag += 1;
             
+            // if miss server sett value or commended, return error
             if (fgets(dns_ip, INET6_ADDRSTRLEN, settings_file) == NULL || dns_ip[0] == '\n' || dns_ip[0] == '/') {
                 fprintf(stderr, "[config parse] Missing server setting\n");
                 exit(1);
             }
 
+            // delete new line character
             dns_ip[strlen(dns_ip) - 1] = 0;
         } else if (strcmp(buff, "[error_response]\n") == 0) {
             flag += 1;
 
+            // same about error_res
             if (fgets(error_res, MAX_ERR_RESP_LEN, settings_file) == NULL || error_res[0] == '\n' || error_res[0] == '/') {
                 fprintf(stderr, "[config parse] Missing error_res setting\n");
                 exit(1);
@@ -72,6 +83,7 @@ int load_settings() {
     return flag;
 }
 
+// load all blacked domain from file into double-dimension array
 void load_blacklist(char blacklist[][MAXDATASIZE]) {
     FILE* blacklst_file;
     char buffer[MAXDATASIZE];
@@ -90,11 +102,14 @@ void load_blacklist(char blacklist[][MAXDATASIZE]) {
     fclose(blacklst_file);
 }
 
+// error handler
 void error(const char *msg) {
     perror(msg);
     exit(1);
 }
 
+// change hostname format from 3www6google3com0 to www.google.com
+// store new value in given var
 void get_hostname(char* hostname, char* dns_request) {
     for ( int i = 0, j = 1; i < strlen((char*)dns_request); i++, j++) {
         int label_size = dns_request[i];
@@ -108,13 +123,17 @@ void get_hostname(char* hostname, char* dns_request) {
     hostname[strlen(dns_request) - 1] = '\0';
 }
 
-
+// handle every incoming reqv from dns_cli. 
+// check reqv for match in blacklist, send dns reqv to parent server(set in conf file)
+// return dns response size if success, if cli reqv has banned domain - return -1
 int udp_handler(int sock, char* cli_reqv, char blacklist[][MAXDATASIZE], int len) {
+    // calc quantity of Resource Records(RR)
     int mult_rr;
     int status;
     char* host;
     char hostname[100];
     long dns_request_size;
+    // used for calc quantity of RRs
     struct dns_header* head = NULL;
 
 
@@ -135,6 +154,8 @@ int udp_handler(int sock, char* cli_reqv, char blacklist[][MAXDATASIZE], int len
     return send_dns_request(cli_reqv, dns_request_size);
 }
 
+// open connection with parent dns server, send reqv and recieve response; handle all sockets error.
+// return size of response
 int send_dns_request(char* dns_request, long len) {
     int sock_udp;
     int udp_status;
@@ -145,13 +166,17 @@ int send_dns_request(char* dns_request, long len) {
 
     memset(&hints, 0, sizeof(hints));
     
+    // no matter IPv4 or IPv6
     hints.ai_family = AF_UNSPEC;
+    // UDP
     hints.ai_socktype = SOCK_DGRAM;
 
+// take info about parent server
     if ((udp_status = getaddrinfo(dns_ip, DNS_PORT, &hints, &servinfo)) != 0) {
         error(gai_strerror(udp_status));
     }
 
+// looking arount addrinfo linked list and open first availble socket
     for (p = servinfo; p != NULL; p = p->ai_next) {
         if ((sock_udp = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0) {
             continue;
@@ -171,6 +196,7 @@ int send_dns_request(char* dns_request, long len) {
     }
     printf("[send_dns]Done\n");
 
+// we no longer need this list
     freeaddrinfo(servinfo);
 
     recv_size = sizeof(their_addr);
@@ -186,6 +212,8 @@ int send_dns_request(char* dns_request, long len) {
     return numbytes;
 }
 
+// open UDP socket, handle all request from dns clients, load blacklist from file
+// if success - send response to client, else - send current error message 
 void start_udp_server() {
     int udp_socket;
     int status, numbytes;
@@ -202,7 +230,8 @@ void start_udp_server() {
 
     serv_addr.ai_family = AF_UNSPEC;
     serv_addr.ai_socktype = SOCK_DGRAM;
-    serv_addr.ai_flags = AI_PASSIVE; // set my ip
+// set my ip
+    serv_addr.ai_flags = AI_PASSIVE;
 
     if ((status = getaddrinfo(NULL, PORTNUMB, &serv_addr, &tcp_info)) != 0) {
         error(gai_strerror(status));
@@ -231,6 +260,7 @@ void start_udp_server() {
     printf("[udp_server]: waiting for connections...\n");
     
     while (1) {
+        // store client reqv
         char client_reqv[MAX_DNS_REQUST_SIZE];
 
         memset(&client_reqv, 0, sizeof(client_reqv));
@@ -246,6 +276,7 @@ void start_udp_server() {
         numbytes = udp_handler(udp_socket, client_reqv, black_list, list_len);
 
         if (numbytes < 0) {
+            // this doamin in blacklist. sends error message to client (err message set by conf file)
             if (sendto(udp_socket, error_res, sizeof(error_res), 0, (struct sockaddr*)&cli_addr, sizeof(cli_addr)) < 0) {
                 error("[udp_server] ERROR on send");
             }
@@ -261,6 +292,7 @@ void start_udp_server() {
 
 
 int main() {
+    // check if all settings available
     if (load_settings() < 0) {
         fprintf(stderr, "[config parse] Invalid config file format\n");
         exit(1);
